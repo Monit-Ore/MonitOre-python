@@ -6,26 +6,16 @@ import psutil
 from datetime import datetime
 
 
-# Nome do arquivo que receberá as capturas.
-# O arquivo será criado na mesma pasta do programa.
 ARQUIVO_CSV = "./captura_resumo.csv"
+
+
+IDENTIFICADOR_TORRE = "TORRE-001"
+IDENTIFICADOR_SERVIDOR = "SERVIDOR-001"
 
 
 def classificar_uso(valor):
     """
     Classifica o percentual de utilização da métrica.
-
-    NORMAL:
-    uso abaixo de 50%.
-
-    ATENCAO:
-    uso entre 50% e 79.99%.
-
-    ALTO:
-    uso entre 80% e 89.99%.
-
-    CRITICO:
-    uso igual ou superior a 90%.
     """
 
     if valor < 50:
@@ -44,10 +34,6 @@ def classificar_uso(valor):
 def arquivo_precisa_cabecalho(caminho):
     """
     Verifica se o cabeçalho precisa ser criado.
-
-    O cabeçalho será criado quando:
-    - o arquivo ainda não existir;
-    - ou o arquivo existir, mas estiver vazio.
     """
 
     return (
@@ -56,19 +42,19 @@ def arquivo_precisa_cabecalho(caminho):
     )
 
 
-# Obtém a quantidade de processadores disponíveis.
-#
-# logical=False:
-# retorna a quantidade de processadores físicos.
-#
-# logical=True:
-# retorna a quantidade de processadores virtuais.
+# quantidade de processadores disponíveis.
+
+# logical=False:quantidade de processadores físicos.
+
+# logical=True: quantidade de processadores virtuais.
 processadores_fisicos = psutil.cpu_count(logical=False)
 processadores_virtuais = psutil.cpu_count(logical=True)
 
 
 # Define as colunas do arquivo CSV.
 cabecalho = [
+    "identificador_torre",
+    "identificador_servidor",
     "data",
     "hora",
     "cpu_total_percentual",
@@ -84,26 +70,26 @@ cabecalho = [
 ]
 
 
-# Verifica antes de abrir o arquivo se ele precisa
-# receber o cabeçalho.
 precisa_cabecalho = arquivo_precisa_cabecalho(
     ARQUIVO_CSV
 )
 
 
-print("=" * 50)
+# Apresenta a identificação do monitoramento.
+print("=" * 60)
+print("MONITOR ORE")
 print("MONITORAMENTO DE RECURSOS")
-print("=" * 50)
-print(f"Processadores físicos: {processadores_fisicos}")
-print(f"Processadores virtuais: {processadores_virtuais}")
+print("=" * 60)
+print(f"Torre      : {IDENTIFICADOR_TORRE}")
+print(f"Servidor   : {IDENTIFICADOR_SERVIDOR}")
+print(f"CPUs físicas  : {processadores_fisicos}")
+print(f"CPUs virtuais : {processadores_virtuais}")
 print("Captura iniciada.")
-print("Pressione Ctrl + C para encerrar.")
-print("=" * 50)
+print("=" * 60)
 
 
 try:
-    # O modo "a" adiciona as novas capturas
-    # sem apagar o histórico existente.
+    # modo "a" = adiciona novas capturas sem apagar o histórico existente
     with open(
         ARQUIVO_CSV,
         "a",
@@ -111,70 +97,63 @@ try:
         encoding="utf-8-sig"
     ) as arquivo_csv:
 
-        # O ponto e vírgula facilita a separação
-        # das colunas no Excel em português.
+
         escritor = csv.writer(
             arquivo_csv,
             delimiter=";"
         )
 
-        # Adiciona o cabeçalho somente na
-        # primeira criação do arquivo.
+        # Adiciona o cabeçalho somente quando o arquivo é criado pela primeira vez
         if precisa_cabecalho:
             escritor.writerow(cabecalho)
             arquivo_csv.flush()
 
-        # Mantém a captura funcionando continuamente.
-        # O programa será encerrado somente quando
-        # o usuário pressionar Ctrl + C.
+        # monitoramento em ciclos infinitos
         while True:
 
-            # Aguarda 1 segundo enquanto mede o uso
-            # de cada processador virtual.
+            # Mede o uso de cada processador virtual
             uso_processadores = psutil.cpu_percent(
                 interval=1,
                 percpu=True
             )
 
-            # Calcula a média de utilização de todos
-            # os processadores virtuais.
+            # Calcula a média de utilização das CPUs
             cpu_total = (
                 sum(uso_processadores)
                 / len(uso_processadores)
             )
 
-            # Obtém o percentual de utilização da RAM.
+            # Obtém o percentual de utilização da RAM
             ram = psutil.virtual_memory().percent
 
-            # Identifica o disco principal do sistema.
+            # Identifica o disco principal do sistema
             raiz_disco = os.path.abspath(os.sep)
 
-            # Obtém o percentual de utilização do disco.
+            # Obtém o percentual de utilização do disco
             disco = psutil.disk_usage(
                 raiz_disco
             ).percent
 
-            # Obtém a data e a hora da captura.
+            # Obtém a data e a hora da captura
             agora = datetime.now()
 
             data = agora.strftime("%d/%m/%Y")
             hora = agora.strftime("%H:%M:%S")
 
-            # Encontra o maior percentual entre
-            # todos os processadores virtuais.
+            # Encontra o maior percentual de uso entre os processadores virtuais
             maior_uso_cpu = max(uso_processadores)
 
-            # Descobre qual CPU virtual apresentou
-            # o maior percentual de utilização.
+            # Identifica qual CPU apresentou o maior uso
             numero_cpu_maior_uso = (
                 uso_processadores.index(
                     maior_uso_cpu
                 )
             )
 
-            # Organiza todos os dados que serão
-            # adicionados em uma linha do arquivo.
+            # Organiza os dados que serão adicionados em uma nova linha do arquivo CSV
             linha = [
+                IDENTIFICADOR_TORRE,
+                IDENTIFICADOR_SERVIDOR,
                 data,
                 hora,
                 round(cpu_total, 2),
@@ -189,18 +168,20 @@ try:
                 processadores_virtuais
             ]
 
-            # Adiciona a captura no arquivo CSV.
+            # Adiciona a captura no arquivo CSV
             escritor.writerow(linha)
 
-            # Garante que os dados sejam salvos
-            # imediatamente no arquivo.
+            # Garante que os dados sejam gravados imediatamente no arquivo
             arquivo_csv.flush()
 
-            # Exibe no terminal um resumo da captura.
+            # Exibe no terminal um resumo da captura
             print()
-            print("-" * 50)
+            print("-" * 60)
             print(f"CAPTURA — {data} às {hora}")
-            print("-" * 50)
+            print("-" * 60)
+
+            print(f"Torre     : {IDENTIFICADOR_TORRE}")
+            print(f"Servidor  : {IDENTIFICADOR_SERVIDOR}")
 
             print(
                 f"CPU total : {cpu_total:6.2f}% "
@@ -224,18 +205,17 @@ try:
             )
 
             print()
-            print("Próxima captura em aproximadamente 10 segundos...")
+            print(
+                "Próxima captura em aproximadamente "
+                "10 segundos..."
+            )
 
-            # A medição da CPU já demora 1 segundo.
-            # A pausa de 9 segundos completa aproximadamente
-            # 10 segundos entre o início de cada captura.
+            # aproximadamente 10 segundos ( 1 da medição da CPU + 9)
             time.sleep(9)
 
 
-# O Ctrl + C gera uma interrupção do tipo
-# KeyboardInterrupt, encerrando o ciclo infinito.
 except KeyboardInterrupt:
     print()
-    print("=" * 50)
+    print("=" * 60)
     print("Captura encerrada pelo usuário.")
-    print("=" * 50)
+    print("=" * 60)
