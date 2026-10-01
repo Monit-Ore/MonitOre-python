@@ -13,22 +13,22 @@ IDENTIFICADOR_TORRE = "TORRE-001"
 IDENTIFICADOR_SERVIDOR = "SERVIDOR-001"
 
 
-def classificar_uso(valor):
-    """
-    Classifica o percentual de utilização da métrica.
-    """
+# def classificar_uso(valor):
+#     """
+#     Classifica o percentual de utilização da métrica.
+#     """
 
-    if valor < 50:
-        return "NORMAL"
+#     if valor < 50:
+#         return "NORMAL"
 
-    elif valor < 80:
-        return "ATENCAO"
+#     elif valor < 80:
+#         return "ATENCAO"
 
-    elif valor < 90:
-        return "ALTO"
+#     elif valor < 90:
+#         return "ALTO"
 
-    else:
-        return "CRITICO"
+#     else:
+#         return "CRITICO"
 
 
 def arquivo_precisa_cabecalho(caminho):
@@ -157,11 +157,11 @@ try:
                 data,
                 hora,
                 round(cpu_total, 2),
-                classificar_uso(cpu_total),
-                round(ram, 2),
-                classificar_uso(ram),
-                round(disco, 2),
-                classificar_uso(disco),
+                # classificar_uso(cpu_total),
+                # round(ram, 2),
+                # classificar_uso(ram),
+                # round(disco, 2),
+                # classificar_uso(disco),
                 numero_cpu_maior_uso,
                 round(maior_uso_cpu, 2),
                 processadores_fisicos,
@@ -190,18 +190,18 @@ try:
 
             print(
                 f"RAM       : {ram:6.2f}% "
-                f"[{classificar_uso(ram)}]"
+                # f"[{classificar_uso(ram)}]"
             )
 
             print(
                 f"Disco     : {disco:6.2f}% "
-                f"[{classificar_uso(disco)}]"
+                # f"[{classificar_uso(disco)}]"
             )
 
             print(
                 f"Maior CPU : CPU {numero_cpu_maior_uso} "
                 f"com {maior_uso_cpu:.2f}% "
-                f"[{classificar_uso(maior_uso_cpu)}]"
+                # f"[{classificar_uso(maior_uso_cpu)}]"
             )
 
             print()
