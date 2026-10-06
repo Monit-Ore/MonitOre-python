@@ -9,7 +9,7 @@ ARQUIVO_CSV = "./captura_mas_com_processos.csv"
 IDENTIFICADOR_TORRE = "TORRE-001"
 IDENTIFICADOR_SERVIDOR = "SERVIDOR-001"
 
-# Definição do cabeçalho focado em processos e CPU
+# Definição do cabeçalho focado em processos e CPU (sem status)
 CABECALHO = [
     "identificador_torre",
     "identificador_servidor",
@@ -17,7 +17,6 @@ CABECALHO = [
     "hora",
     "pid",
     "nome_processo",
-    "status_processo",
     "cpu_processo_percentual",
     "cpu_classificacao"
 ]
@@ -48,6 +47,7 @@ def arquivo_precisa_cabecalho(caminho):
 
 
 precisa_cabecalho = arquivo_precisa_cabecalho(ARQUIVO_CSV)
+cpu_count = psutil.cpu_count() or 1
 
 print("=" * 70)
 print("MONITOR DE PROCESSOS — FOCO EM CPU")
@@ -58,7 +58,7 @@ print(f"Arquivo   : {ARQUIVO_CSV}")
 print("Captura iniciada. Pressione CTRL+C para encerrar.")
 print("=" * 70)
 
-# Primeira chamada sem intervalo para inicializar o cálculo de percentual nos processos
+#  chamada sem intervalo 
 for p in psutil.process_iter(['pid']):
     try:
         p.cpu_percent(interval=None)
@@ -90,15 +90,14 @@ try:
 
             lista_processos = []
 
-            for proc in psutil.process_iter(['pid', 'name', 'status']):
+            for proc in psutil.process_iter(['pid', 'name']):
                 try:
-                    # Mede o uso de CPU desde a última chamada
-                    cpu_uso = proc.cpu_percent(interval=None) / psutil.cpu_count();  # Normaliza pelo número de CPUs
+                    # Mede o uso de CPU desde a última chamada normalizado pelo número de CPUs
+                    cpu_uso = proc.cpu_percent(interval=None) / cpu_count
 
                     lista_processos.append({
                         "pid": proc.info['pid'],
                         "nome": proc.info['name'] or "desconhecido",
-                        "status": proc.info['status'] or "N/A",
                         "cpu": cpu_uso,
                         "classificacao": classificar_uso(cpu_uso)
                     })
@@ -117,7 +116,6 @@ try:
                     hora,
                     p["pid"],
                     p["nome"],
-                    p["status"],
                     f"{p['cpu']:.2f}",
                     p["classificacao"]
                 ])
@@ -128,14 +126,13 @@ try:
             print("\n" + "-" * 70)
             print(f"CAPTURA — {data} às {hora} | Total de processos: {len(lista_processos)}")
             print("-" * 70)
-            print(f"{'PID':<8} {'PROCESSO':<30} {'STATUS':<12} {'CPU (%)':<10} {'CLASSIFICAÇÃO'}")
+            print(f"{'PID':<8} {'PROCESSO':<35} {'CPU (%)':<10} {'CLASSIFICAÇÃO'}")
             print("-" * 70)
 
             for p in lista_processos[:5]:
                 print(
                     f"{p['pid']:<8} "
-                    f"{p['nome'][:28]:<30} "
-                    f"{p['status']:<12} "
+                    f"{p['nome'][:33]:<35} "
                     f"{p['cpu']:>6.2f}%    "
                     f"[{p['classificacao']}]"
                 )
