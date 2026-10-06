@@ -1,31 +1,34 @@
 import csv
 from datetime import datetime
+
+# manipulacao de caminhos e recursos do SO
 import os
 import time
 import psutil
 
-# definicao do nome do arquivo csv de destino
+# nomezao que vai aparecer no arquivo
 ARQUIVO_CSV = "./CAPTURA_FINALIZADA.csv"
 
 
-# funcao para verificar se o arquivo precisa de cabecalho
+# funcao pra verificar se o arquivo vai precisar de cabecalho
 def arquivo_precisa_cabecalho(caminho):
     return not os.path.exists(caminho) or os.path.getsize(caminho) == 0
 
 
-# solicitacao dos identificadores via terminal
+# pedido dos nomes dos servidores e torres
+#NAO SEI SE PRECISA MAS COLOQUEI
 print("=" * 60)
 print("MONITOR ORE - CAPTURA RELACIONAL DE PROCESSOS")
 print("=" * 60)
 identificador_torre = input("qual o nome da torre? ").strip()
 identificador_servidor = input("qual o servidor da torre? ").strip()
 
-# contagem de nucleos e memoria total fisica em megabytes
+# contagem de nucleos e memoria total fisica em MB
 processadores_virtuais = psutil.cpu_count(logical=True) or 1
 memoria_sistema = psutil.virtual_memory()
 ram_total_mb = round(memoria_sistema.total / (1024 * 1024), 2)
 
-# definicao das colunas relacionando hardware global e processos
+# definicao das coluna
 cabecalho = [
     "RODADA",
     "TORRE",
@@ -88,7 +91,7 @@ try:
                     info = proc.info
                     pid = info["pid"]
 
-                    # ignora o processo ocioso do sistema (pid 0)
+                    # IGNORA O PID 0 "System Idle Process" e processos sem nome
                     if pid == 0 or info["name"] == "System Idle Process":
                         continue
 
@@ -98,7 +101,7 @@ try:
                     # calcula quanto o processo consome da capacidade total do processador
                     proc_cpu_global = proc_cpu_absoluta / processadores_virtuais
 
-                    # memoria ram utilizada em megabytes e percentual
+                    # memoria ram utilizada em MB e percentual
                     proc_ram_mb = (info["memory_info"].rss or 0) / (1024 * 1024)
                     proc_ram_pct = info["memory_percent"] or 0.0
 
@@ -130,7 +133,7 @@ try:
                 ):
                     continue
 
-            # linha em branco entre capturas para separacao visual
+            # linha em branco entre capturas para separacao visual 
             escritor.writerow([])
             arquivo_csv.flush()
 

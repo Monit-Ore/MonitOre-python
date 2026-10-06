@@ -14,7 +14,7 @@ def analisar_capturas(caminho_arquivo):
 
         rodadas = {}
 
-        # agrupamento das linhas por rodada
+        # AGrupar as linhas por rodada
         for linha in leitor:
             if not linha or not linha.get("RODADA"):
                 continue
@@ -45,7 +45,7 @@ def analisar_capturas(caminho_arquivo):
                 }
             )
 
-        # exibicao estruturada com top 5 de impacto
+        #  TOP 5 de impacto real na cpu pra cada rodada
         for rodada_id, dados in rodadas.items():
             info = dados["info"]
             print("=" * 78)
