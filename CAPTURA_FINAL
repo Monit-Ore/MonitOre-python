@@ -1,35 +1,32 @@
 import csv
 from datetime import datetime
-
-# manipulacao de caminhos e recursos do SO
 import os
 import time
 import psutil
 
-# nomezao que vai aparecer no arquivo
-ARQUIVO_CSV = "./CAPTURA_FINALIZADA.csv"
+# definicao dos nomes dos ficheiros csv
+ARQUIVO_HARDWARE = "./CAPTURA_HARDWARE.csv"
+ARQUIVO_PROCESSOS = "./CAPTURA_PROCESSOS.csv"
 
 
-# funcao pra verificar se o arquivo vai precisar de cabecalho
-def arquivo_precisa_cabecalho(caminho):
+# funcao para verificar se o ficheiro necessita de cabecalho
+def precisa_cabecalho(caminho):
     return not os.path.exists(caminho) or os.path.getsize(caminho) == 0
 
 
-# pedido dos nomes dos servidores e torres
-#NAO SEI SE PRECISA MAS COLOQUEI
 print("=" * 60)
-print("MONITOR ORE - CAPTURA RELACIONAL DE PROCESSOS")
+print("MONITOR ORE - CAPTURA SEPARADA (HARDWARE E PROCESSOS)")
 print("=" * 60)
 identificador_torre = input("qual o nome da torre? ").strip()
 identificador_servidor = input("qual o servidor da torre? ").strip()
 
-# contagem de nucleos e memoria total fisica em MB
+# contagem de processadores logicos e memoria fisica total
 processadores_virtuais = psutil.cpu_count(logical=True) or 1
 memoria_sistema = psutil.virtual_memory()
 ram_total_mb = round(memoria_sistema.total / (1024 * 1024), 2)
 
-# definicao das coluna
-cabecalho = [
+# cabecalho da tabela de hardware (nivel de servidor)
+cabecalho_hardware = [
     "RODADA",
     "TORRE",
     "SERVIDOR",
@@ -39,6 +36,15 @@ cabecalho = [
     "RAM_TOTAL_PCT",
     "RAM_TOTAL_MB",
     "DISCO_TOTAL_PCT",
+]
+
+# cabecalho da tabela de processos (relacionada pela rodada)
+cabecalho_processos = [
+    "RODADA",
+    "TORRE",
+    "SERVIDOR",
+    "DATA",
+    "HORA",
     "PID",
     "PROCESSO",
     "PROC_CPU_ABSOLUTA_PCT",
@@ -47,7 +53,9 @@ cabecalho = [
     "PROC_RAM_MB",
 ]
 
-precisa_cabecalho = arquivo_precisa_cabecalho(ARQUIVO_CSV)
+# verificacao inicial de cabecalho
+escrever_cabecalho_hw = precisa_cabecalho(ARQUIVO_HARDWARE)
+escrever_cabecalho_proc = precisa_cabecalho(ARQUIVO_PROCESSOS)
 numero_rodada = 1
 
 print()
@@ -61,17 +69,25 @@ print("=" * 60)
 
 try:
     with open(
-        ARQUIVO_CSV, "a", newline="", encoding="utf-8-sig"
-    ) as arquivo_csv:
-        escritor = csv.writer(arquivo_csv, delimiter=";")
+        ARQUIVO_HARDWARE, "a", newline="", encoding="utf-8-sig"
+    ) as f_hw, open(
+        ARQUIVO_PROCESSOS, "a", newline="", encoding="utf-8-sig"
+    ) as f_proc:
 
-        if precisa_cabecalho:
-            escritor.writerow(cabecalho)
-            arquivo_csv.flush()
-            precisa_cabecalho = False
+        escritor_hw = csv.writer(f_hw, delimiter=";")
+        escritor_proc = csv.writer(f_proc, delimiter=";")
+
+        # gravacao dos cabecalhos se os ficheiros forem novos
+        if escrever_cabecalho_hw:
+            escritor_hw.writerow(cabecalho_hardware)
+            f_hw.flush()
+
+        if escrever_cabecalho_proc:
+            escritor_proc.writerow(cabecalho_processos)
+            f_proc.flush()
 
         while True:
-            # medicao global do sistema
+            # medicao global do sistema (hardware)
             cpu_total_pct = psutil.cpu_percent(interval=1)
             mem = psutil.virtual_memory()
             ram_total_pct = mem.percent
@@ -82,6 +98,22 @@ try:
             data = agora.strftime("%d/%m/%Y")
             hora = agora.strftime("%H:%M:%S")
 
+            # linha da metrica de hardware (uma unica linha por rodada)
+            linha_hw = [
+                numero_rodada,
+                identificador_torre,
+                identificador_servidor,
+                data,
+                hora,
+                round(cpu_total_pct, 2),
+                round(ram_total_pct, 2),
+                ram_total_mb,
+                round(disco_total_pct, 2),
+            ]
+            escritor_hw.writerow(linha_hw)
+            f_hw.flush()
+
+            # medicao de processos da rodada
             total_processos = 0
 
             for proc in psutil.process_iter(
@@ -91,30 +123,24 @@ try:
                     info = proc.info
                     pid = info["pid"]
 
-                    # IGNORA O PID 0 "System Idle Process" e processos sem nome
+                    # ignora o idle do sistema e processos vazios
                     if pid == 0 or info["name"] == "System Idle Process":
                         continue
 
                     nome_processo = info["name"]
                     proc_cpu_absoluta = info["cpu_percent"] or 0.0
-
-                    # calcula quanto o processo consome da capacidade total do processador
-                    proc_cpu_global = proc_cpu_absoluta / processadores_virtuais
-
-                    # memoria ram utilizada em MB e percentual
+                    proc_cpu_global = (
+                        proc_cpu_absoluta / processadores_virtuais
+                    )
                     proc_ram_mb = (info["memory_info"].rss or 0) / (1024 * 1024)
                     proc_ram_pct = info["memory_percent"] or 0.0
 
-                    linha = [
+                    linha_proc = [
                         numero_rodada,
                         identificador_torre,
                         identificador_servidor,
                         data,
                         hora,
-                        round(cpu_total_pct, 2),
-                        round(ram_total_pct, 2),
-                        ram_total_mb,
-                        round(disco_total_pct, 2),
                         pid,
                         nome_processo,
                         round(proc_cpu_absoluta, 2),
@@ -123,7 +149,7 @@ try:
                         round(proc_ram_mb, 2),
                     ]
 
-                    escritor.writerow(linha)
+                    escritor_proc.writerow(linha_proc)
                     total_processos += 1
 
                 except (
@@ -133,12 +159,10 @@ try:
                 ):
                     continue
 
-            # linha em branco entre capturas para separacao visual 
-            escritor.writerow([])
-            arquivo_csv.flush()
+            f_proc.flush()
 
             print(
-                f"rodada #{numero_rodada} concluida com {total_processos} processos."
+                f"rodada #{numero_rodada} registada: 1 linha em hardware e {total_processos} processos gravados."
             )
             numero_rodada += 1
             time.sleep(9)
