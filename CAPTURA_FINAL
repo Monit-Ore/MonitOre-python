@@ -5,8 +5,13 @@ import time
 import psutil
 
 # definicao dos nomes dos ficheiros csv
+
+
+#ALTEREM AQUI SEUS ANIMAIS!!!
+#JEFF = 1 , AMANDA = 2, ISAAC = 3, DUDA = 4, ARTHUR = 5, GUILHERME = 6
 ARQUIVO_HARDWARE = "./CAPTURA_HARDWARE.csv"
 ARQUIVO_PROCESSOS = "./CAPTURA_PROCESSOS.csv"
+TOTAL_REGISTROS_LIMITE = 50
 
 
 # funcao para verificar se o ficheiro necessita de cabecalho
@@ -25,7 +30,7 @@ processadores_virtuais = psutil.cpu_count(logical=True) or 1
 memoria_sistema = psutil.virtual_memory()
 ram_total_mb = round(memoria_sistema.total / (1024 * 1024), 2)
 
-# cabecalho da tabela de hardware (nivel de servidor)
+# cabecalho da tabela de hardware
 cabecalho_hardware = [
     "RODADA",
     "TORRE",
@@ -36,9 +41,10 @@ cabecalho_hardware = [
     "RAM_TOTAL_PCT",
     "RAM_TOTAL_MB",
     "DISCO_TOTAL_PCT",
+    "QTD_PROCESSOS",
 ]
 
-# cabecalho da tabela de processos (relacionada pela rodada)
+# cabecalho da tabela de processos
 cabecalho_processos = [
     "RODADA",
     "TORRE",
@@ -53,7 +59,6 @@ cabecalho_processos = [
     "PROC_RAM_MB",
 ]
 
-# verificacao inicial de cabecalho
 escrever_cabecalho_hw = precisa_cabecalho(ARQUIVO_HARDWARE)
 escrever_cabecalho_proc = precisa_cabecalho(ARQUIVO_PROCESSOS)
 numero_rodada = 1
@@ -65,6 +70,7 @@ print(f"torre        : {identificador_torre}")
 print(f"servidor     : {identificador_servidor}")
 print(f"cpus lógicas : {processadores_virtuais}")
 print(f"ram total    : {ram_total_mb:.2f} mb")
+print(f"meta         : {TOTAL_REGISTROS_LIMITE} rodadas")
 print("=" * 60)
 
 try:
@@ -77,7 +83,6 @@ try:
         escritor_hw = csv.writer(f_hw, delimiter=";")
         escritor_proc = csv.writer(f_proc, delimiter=";")
 
-        # gravacao dos cabecalhos se os ficheiros forem novos
         if escrever_cabecalho_hw:
             escritor_hw.writerow(cabecalho_hardware)
             f_hw.flush()
@@ -86,7 +91,7 @@ try:
             escritor_proc.writerow(cabecalho_processos)
             f_proc.flush()
 
-        while True:
+        while numero_rodada <= TOTAL_REGISTROS_LIMITE:
             # medicao global do sistema (hardware)
             cpu_total_pct = psutil.cpu_percent(interval=1)
             mem = psutil.virtual_memory()
@@ -98,23 +103,8 @@ try:
             data = agora.strftime("%d/%m/%Y")
             hora = agora.strftime("%H:%M:%S")
 
-            # linha da metrica de hardware (uma unica linha por rodada)
-            linha_hw = [
-                numero_rodada,
-                identificador_torre,
-                identificador_servidor,
-                data,
-                hora,
-                round(cpu_total_pct, 2),
-                round(ram_total_pct, 2),
-                ram_total_mb,
-                round(disco_total_pct, 2),
-            ]
-            escritor_hw.writerow(linha_hw)
-            f_hw.flush()
-
-            # medicao de processos da rodada
-            total_processos = 0
+            # coleta e preparacao dos processos da rodada
+            linhas_processos = []
 
             for proc in psutil.process_iter(
                 ["pid", "name", "cpu_percent", "memory_info", "memory_percent"]
@@ -123,7 +113,6 @@ try:
                     info = proc.info
                     pid = info["pid"]
 
-                    # ignora o idle do sistema e processos vazios
                     if pid == 0 or info["name"] == "System Idle Process":
                         continue
 
@@ -135,22 +124,21 @@ try:
                     proc_ram_mb = (info["memory_info"].rss or 0) / (1024 * 1024)
                     proc_ram_pct = info["memory_percent"] or 0.0
 
-                    linha_proc = [
-                        numero_rodada,
-                        identificador_torre,
-                        identificador_servidor,
-                        data,
-                        hora,
-                        pid,
-                        nome_processo,
-                        round(proc_cpu_absoluta, 2),
-                        round(proc_cpu_global, 2),
-                        round(proc_ram_pct, 2),
-                        round(proc_ram_mb, 2),
-                    ]
-
-                    escritor_proc.writerow(linha_proc)
-                    total_processos += 1
+                    linhas_processos.append(
+                        [
+                            numero_rodada,
+                            identificador_torre,
+                            identificador_servidor,
+                            data,
+                            hora,
+                            pid,
+                            nome_processo,
+                            round(proc_cpu_absoluta, 2),
+                            round(proc_cpu_global, 2),
+                            round(proc_ram_pct, 2),
+                            round(proc_ram_mb, 2),
+                        ]
+                    )
 
                 except (
                     psutil.NoSuchProcess,
@@ -159,13 +147,40 @@ try:
                 ):
                     continue
 
+            qtd_processos = len(linhas_processos)
+
+            # grava 1 linha com as metricas de hardware
+            linha_hw = [
+                numero_rodada,
+                identificador_torre,
+                identificador_servidor,
+                data,
+                hora,
+                round(cpu_total_pct, 2),
+                round(ram_total_pct, 2),
+                ram_total_mb,
+                round(disco_total_pct, 2),
+                qtd_processos,
+            ]
+            escritor_hw.writerow(linha_hw)
+            f_hw.flush()
+
+            # grava todos os processos capturados no csv de processos
+            escritor_proc.writerows(linhas_processos)
             f_proc.flush()
 
             print(
-                f"rodada #{numero_rodada} registada: 1 linha em hardware e {total_processos} processos gravados."
+                f"rodada [{numero_rodada}/{TOTAL_REGISTROS_LIMITE}] concluida: hardware gravado com {qtd_processos} processos."
             )
+
+            if numero_rodada == TOTAL_REGISTROS_LIMITE:
+                print(
+                    f"\nlimite de {TOTAL_REGISTROS_LIMITE} registros atingido! encerrando captura."
+                )
+                break
+
             numero_rodada += 1
             time.sleep(9)
 
 except KeyboardInterrupt:
-    print("\ncaptura finalizada pelo utilizador.")
+    print("\ncaptura finalizada manualmente pelo utilizador.")
