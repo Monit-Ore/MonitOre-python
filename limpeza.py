@@ -1,10 +1,11 @@
+
 import csv
 import os
+import glob
 
 
-ARQUIVO_HARDWARE = "CAPTURA_HARDWARE.csv"
-ARQUIVO_PROCESSOS = "CAPTURA_PROCESSOS.csv"
-
+PASTA_CAPTURA = "."
+PASTA_LIMPEZA = "."
 
 
 def ler_csv(caminho):
@@ -23,7 +24,7 @@ def ler_csv(caminho):
             for coluna in colunas_originais
         ]
 
-        # Compatibilidade com arquivos antigos.
+        # compatibilidade com arquivos antigos
         if "SERVIDOR" in colunas and "PC_INDUSTRIAL" not in colunas:
             indice = colunas.index("SERVIDOR")
             colunas[indice] = "PC_INDUSTRIAL"
@@ -51,7 +52,6 @@ def ler_csv(caminho):
 def limpar_dados(dados, colunas):
     dados_limpos = []
 
-    # Campos essenciais para identificar cada registro.
     campos_obrigatorios = [
         "RODADA",
         "PC_INDUSTRIAL",
@@ -62,23 +62,22 @@ def limpar_dados(dados, colunas):
     for registro in dados:
         registro_valido = True
 
-        # Verifica se as colunas obrigatórias existem e possuem valor.
         for campo in campos_obrigatorios:
             if campo not in colunas:
-                continue
+                registro_valido = False
+                break
 
             valor = registro.get(campo, "")
 
-            if valor is None or valor.strip().upper() in ("", "NA", "N/A"):
+            if valor.upper() in ("", "NA", "N/A"):
                 registro_valido = False
                 break
 
         if not registro_valido:
             continue
 
-        # Remove registros completamente vazios ou inválidos.
         if not any(
-            valor and valor.strip().upper() not in ("NA", "N/A")
+            valor and valor.upper() not in ("NA", "N/A")
             for valor in registro.values()
         ):
             continue
@@ -106,21 +105,23 @@ def salvar_csv(caminho, dados, colunas):
         escritor.writerows(dados)
 
 
-
-for arquivo_original in (
-    ARQUIVO_HARDWARE,
-    ARQUIVO_PROCESSOS,
-):
-    if not os.path.exists(arquivo_original):
-        print("Arquivo nao encontrado:", arquivo_original)
-        continue
-
+def processar_arquivo(arquivo_original, tipo):
     dados, colunas = ler_csv(arquivo_original)
 
     dados_limpos = limpar_dados(dados, colunas)
 
-    nome, extensao = os.path.splitext(arquivo_original)
-    arquivo_limpo = f"{nome}_LIMPO{extensao}"
+    nome_arquivo = os.path.basename(arquivo_original)
+
+    # mantém a data e o horário da captura no nome
+    identificador = nome_arquivo.replace(
+        f"_CAPTURA_{tipo}.csv",
+        "",
+    )
+
+    arquivo_limpo = os.path.join(
+        PASTA_LIMPEZA,
+        f"{identificador}_LIMPEZA_{tipo}.csv",
+    )
 
     salvar_csv(
         arquivo_limpo,
@@ -129,7 +130,34 @@ for arquivo_original in (
     )
 
     print("Arquivo limpo:", arquivo_limpo)
-    print("Registros originais:", len(dados))
-    print("Registros apos limpeza:", len(dados_limpos))
-    print("Colunas:", ";".join(colunas))
     print("-" * 50)
+
+
+def main():
+    print("=" * 60)
+    print("MONITORE - LIMPEZA DE DADOS")
+    print("=" * 60)
+
+    arquivos_hardware = glob.glob(
+        os.path.join(PASTA_CAPTURA, "*_CAPTURA_HARDWARE.csv")
+    )
+
+    arquivos_processos = glob.glob(
+        os.path.join(PASTA_CAPTURA, "*_CAPTURA_PROCESSOS.csv")
+    )
+
+    arquivos = (
+        [(arquivo, "HARDWARE") for arquivo in arquivos_hardware]
+        + [(arquivo, "PROCESSOS") for arquivo in arquivos_processos]
+    )
+
+    if not arquivos:
+        print("Nenhum arquivo de captura encontrado")
+        return
+
+    for arquivo, tipo in sorted(arquivos):
+        processar_arquivo(arquivo, tipo)
+
+
+if __name__ == "__main__":
+    main()

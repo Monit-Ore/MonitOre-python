@@ -1,18 +1,19 @@
 import csv
 import os
+import glob
+import unicodedata
 from datetime import datetime
+from getpass import getpass
+
 import mysql.connector
 
-ARQUIVO_HARDWARE = "CAPTURA_HARDWARE_LIMPO.csv"
-ARQUIVO_PROCESSOS = "CAPTURA_PROCESSOS_LIMPO.csv"
 
-ARQUIVO_RESUMO_HARDWARE = "RESUMO_HARDWARE.csv"
-ARQUIVO_HISTORICO_HARDWARE = "HISTORICO_HARDWARE.csv"
-ARQUIVO_HISTORICO_PROCESSOS = "HISTORICO_PROCESSOS.csv"
-ARQUIVO_STATUS_PCS = "STATUS_PCS.csv"
-ARQUIVO_ALERTAS = "ALERTAS.csv"
-ARQUIVO_RESUMO_GERENCIAL = "RESUMO_GERENCIAL.csv"
+# ============================================================
+# CONFIGURACOES
+# ============================================================
 
+PASTA_ENTRADA = "."
+PASTA_SAIDA = "."
 
 CONFIG_BANCO = {
     "host": os.getenv("DB_HOST", "localhost"),
@@ -22,26 +23,31 @@ CONFIG_BANCO = {
     "port": int(os.getenv("DB_PORT", "3306")),
 }
 
+
 COMPONENTES = {
     "CPU": {
         "coluna": "CPU_TOTAL_PCT",
-        "nome": "CPU",
+        "aliases": ["cpu", "processador"],
     },
     "RAM": {
         "coluna": "RAM_TOTAL_PCT",
-        "nome": "RAM",
+        "aliases": ["ram", "memoria", "memoriaram"],
     },
-    "Disco": {
+    "DISCO": {
         "coluna": "DISCO_TOTAL_PCT",
-        "nome": "Disco",
+        "aliases": ["disco", "armazenamento", "hd", "ssd"],
     },
 }
 
 
+# ============================================================
+# LEITURA E GRAVACAO DOS CSVs
+# ============================================================
+
 def ler_csv(caminho):
     if not os.path.exists(caminho):
         raise FileNotFoundError(
-            f"Arquivo nao encontrado: {caminho}"
+            f"arquivo nao encontrado: {caminho}"
         )
 
     with open(
@@ -89,37 +95,8 @@ def salvar_csv(caminho, dados, colunas):
         escritor.writerows(dados)
 
 
-def adicionar_historico(caminho, dados, colunas):
-    """
-    Acrescenta registros ao historico existente.
-    Cria o arquivo com cabecalho caso ainda nao exista.
-    """
-    arquivo_novo = (
-        not os.path.exists(caminho)
-        or os.path.getsize(caminho) == 0
-    )
-
-    with open(
-        caminho,
-        "a",
-        newline="",
-        encoding="utf-8-sig",
-    ) as arquivo:
-        escritor = csv.DictWriter(
-            arquivo,
-            fieldnames=colunas,
-            delimiter=";",
-            extrasaction="ignore",
-        )
-
-        if arquivo_novo:
-            escritor.writeheader()
-
-        escritor.writerows(dados)
-
-
 # ============================================================
-# CONVERSAO DE VALORES
+# CONVERSAO E NORMALIZACAO
 # ============================================================
 
 def numero(valor):
@@ -137,13 +114,33 @@ def numero(valor):
         return None
 
 
-def inteiro(valor):
-    valor_convertido = numero(valor)
+def normalizar_nome(valor):
+    texto = str(valor).strip().lower()
 
-    if valor_convertido is None:
-        return None
+    texto = unicodedata.normalize("NFD", texto)
 
-    return int(valor_convertido)
+    texto = "".join(
+        caractere
+        for caractere in texto
+        if unicodedata.category(caractere) != "Mn"
+    )
+
+    return "".join(
+        caractere
+        for caractere in texto
+        if caractere.isalnum()
+    )
+
+
+def identificar_componente(nome):
+    nome_normalizado = normalizar_nome(nome)
+
+    for componente, configuracao in COMPONENTES.items():
+        for alias in configuracao["aliases"]:
+            if alias in nome_normalizado:
+                return componente
+
+    return None
 
 
 # ============================================================
@@ -156,7 +153,7 @@ def carregar_dados_banco():
     try:
         cursor = conexao.cursor(dictionary=True)
 
-        # Identifica o PC, a torre e a mineradora.
+        # identifica o PC, a torre e a mineradora
         sql_pcs = """
             SELECT
                 pc.id_pc_industrial,
@@ -177,7 +174,7 @@ def carregar_dados_banco():
         cursor.execute(sql_pcs)
         registros_pcs = cursor.fetchall()
 
-        # Busca os limites de cada componente.
+        # busca os limites de cada componente
         sql_limites = """
             SELECT
                 la.fk_pc_industrial,
@@ -218,12 +215,20 @@ def montar_mapa_limites(registros_limites):
     mapa = {}
 
     for registro in registros_limites:
-        chave_pc = registro["fk_pc_industrial"]
-        componente = str(
-            registro.get("componente", "")
-        ).strip().lower()
+        id_pc = registro["fk_pc_industrial"]
 
-        mapa[(chave_pc, componente)] = {
+        componente = identificar_componente(
+            registro.get("componente", "")
+        )
+
+        if componente is None:
+            print(
+                "AVISO: componente nao reconhecido no banco:",
+                registro.get("componente"),
+            )
+            continue
+
+        mapa[(id_pc, componente)] = {
             "atencao": numero(registro.get("atencao")),
             "critico": numero(registro.get("critico")),
         }
@@ -231,12 +236,17 @@ def montar_mapa_limites(registros_limites):
     return mapa
 
 
+def componentes_configurados(limites, id_pc):
+    return {
+        componente
+        for (pc_id, componente) in limites
+        if pc_id == id_pc
+    }
+
+
 def buscar_limite(limites, id_pc, componente):
-    """
-    Busca os limites cadastrados para um componente.
-    """
     return limites.get(
-        (id_pc, componente.lower()),
+        (id_pc, componente),
         {
             "atencao": None,
             "critico": None,
@@ -255,17 +265,17 @@ def classificar_alerta(valor, limite):
     atencao = limite["atencao"]
     critico = limite["critico"]
 
-    if atencao is not None and valor >= atencao:
-        if critico is not None and valor >= critico:
-            return "Crítico"
+    if atencao is None and critico is None:
+        return "Sem limite"
 
+    if critico is not None and valor >= critico:
+        return "Crítico"
+
+    if atencao is not None and valor >= atencao:
         return "Atenção"
 
-    # Se nao houver limite de atencao, utiliza o critico
-    # como unico limite disponivel.
     if atencao is None and critico is not None:
-        if valor >= critico:
-            return "Crítico"
+        return "Normal"
 
     return "Normal"
 
@@ -297,6 +307,11 @@ def tratar_hardware(dados, mapa_pcs, limites):
 
         id_pc = pc["id_pc_industrial"]
 
+        configurados = componentes_configurados(
+            limites,
+            id_pc,
+        )
+
         registro_tratado = dict(registro)
 
         registro_tratado.update({
@@ -315,12 +330,15 @@ def tratar_hardware(dados, mapa_pcs, limites):
             resumo_por_pc[chave] = {
                 "pc": pc,
                 "registros": [],
+                "componentes": configurados,
             }
 
         resumo_por_pc[chave]["registros"].append(registro)
 
-        for componente, configuracao in COMPONENTES.items():
-            coluna = configuracao["coluna"]
+        # verifica somente os componentes cadastrados para o PC
+        for componente in configurados:
+            coluna = COMPONENTES[componente]["coluna"]
+
             valor = numero(registro.get(coluna))
 
             limite = buscar_limite(
@@ -350,12 +368,13 @@ def tratar_hardware(dados, mapa_pcs, limites):
                     "TIPO_ALERTA": classificacao,
                 })
 
-    # Gera um resumo por PC com base nas capturas processadas.
+    # gera um resumo por PC
     resumos = []
 
     for (id_pc, hostname), agrupamento in resumo_por_pc.items():
         pc = agrupamento["pc"]
         registros = agrupamento["registros"]
+        configurados = agrupamento["componentes"]
 
         resumo = {
             "PC_INDUSTRIAL": hostname,
@@ -367,9 +386,17 @@ def tratar_hardware(dados, mapa_pcs, limites):
         }
 
         for componente, configuracao in COMPONENTES.items():
+            coluna = configuracao["coluna"]
+
+            if componente not in configurados:
+                resumo[f"{componente}_MEDIA_PCT"] = ""
+                resumo[f"{componente}_MIN_PCT"] = ""
+                resumo[f"{componente}_MAX_PCT"] = ""
+                continue
+
             valores = [
-                numero(r.get(configuracao["coluna"]))
-                for r in registros
+                numero(registro.get(coluna))
+                for registro in registros
             ]
 
             valores = [
@@ -378,32 +405,38 @@ def tratar_hardware(dados, mapa_pcs, limites):
             ]
 
             if valores:
-                resumo[f"{componente.upper()}_MEDIA_PCT"] = round(
+                resumo[f"{componente}_MEDIA_PCT"] = round(
                     sum(valores) / len(valores), 2
                 )
-                resumo[f"{componente.upper()}_MIN_PCT"] = round(
+
+                resumo[f"{componente}_MIN_PCT"] = round(
                     min(valores), 2
                 )
-                resumo[f"{componente.upper()}_MAX_PCT"] = round(
+
+                resumo[f"{componente}_MAX_PCT"] = round(
                     max(valores), 2
                 )
             else:
-                resumo[f"{componente.upper()}_MEDIA_PCT"] = ""
-                resumo[f"{componente.upper()}_MIN_PCT"] = ""
-                resumo[f"{componente.upper()}_MAX_PCT"] = ""
+                resumo[f"{componente}_MEDIA_PCT"] = ""
+                resumo[f"{componente}_MIN_PCT"] = ""
+                resumo[f"{componente}_MAX_PCT"] = ""
 
         resumos.append(resumo)
 
-    # Status derivado das ultimas metricas capturadas por PC.
+    # calcula o status com base na ultima captura
     for (id_pc, hostname), agrupamento in resumo_por_pc.items():
         pc = agrupamento["pc"]
         registros = agrupamento["registros"]
+        configurados = agrupamento["componentes"]
+
         ultimo = registros[-1]
 
         classificacoes = []
 
-        for componente, configuracao in COMPONENTES.items():
-            valor = numero(ultimo.get(configuracao["coluna"]))
+        for componente in configurados:
+            coluna = COMPONENTES[componente]["coluna"]
+
+            valor = numero(ultimo.get(coluna))
 
             limite = buscar_limite(
                 limites,
@@ -418,14 +451,18 @@ def tratar_hardware(dados, mapa_pcs, limites):
         if "Crítico" in classificacoes:
             status = "Alerta"
             tipo_alerta = "Crítico"
+
         elif "Atenção" in classificacoes:
             status = "Alerta"
             tipo_alerta = "Atenção"
-        elif all(
-            item == "Sem dados" for item in classificacoes
+
+        elif not classificacoes or all(
+            item in ("Sem dados", "Sem limite")
+            for item in classificacoes
         ):
             status = "Offline"
             tipo_alerta = "Sem dados"
+
         else:
             status = "Online"
             tipo_alerta = "Normal"
@@ -531,18 +568,22 @@ def gerar_resumo_gerencial(status_pcs, alertas):
 # EXECUCAO PRINCIPAL
 # ============================================================
 
-def main():
-    print("=" * 60)
-    print("MONIT ORE - TRATAMENTO DOS DADOS")
-    print("=" * 60)
+def processar_captura(arquivo_hardware, arquivo_processos, identificador):
+    print("-" * 60)
+    print("processando captura:", identificador)
 
-    dados_hardware = ler_csv(ARQUIVO_HARDWARE)
-    dados_processos = ler_csv(ARQUIVO_PROCESSOS)
+    dados_hardware = ler_csv(arquivo_hardware)
 
-    print("Registros de hardware:", len(dados_hardware))
-    print("Registros de processos:", len(dados_processos))
+    dados_processos = (
+        ler_csv(arquivo_processos)
+        if arquivo_processos
+        else []
+    )
 
-    print("Consultando o banco de dados...")
+    print("registros de hardware:", len(dados_hardware))
+    print("registros de processos:", len(dados_processos))
+
+    print("consultando o banco de dados...")
 
     registros_pcs, registros_limites = carregar_dados_banco()
 
@@ -550,7 +591,7 @@ def main():
     limites = montar_mapa_limites(registros_limites)
 
     print("PCs encontrados no banco:", len(mapa_pcs))
-    print("Limites carregados:", len(registros_limites))
+    print("limites carregados:", len(limites))
 
     (
         historico_hardware,
@@ -573,7 +614,16 @@ def main():
         alertas,
     )
 
-    # Colunas adicionais dos arquivos tratados.
+    # define o nome dos arquivos da camada ouro
+    arquivos_saida = {
+        "historico_hardware": f"{identificador}_HISTORICO_HARDWARE.csv",
+        "historico_processos": f"{identificador}_HISTORICO_PROCESSOS.csv",
+        "resumo_hardware": f"{identificador}_RESUMO_HARDWARE.csv",
+        "status_pcs": f"{identificador}_STATUS_PCS.csv",
+        "alertas": f"{identificador}_ALERTAS.csv",
+        "resumo_gerencial": f"{identificador}_RESUMO_GERENCIAL.csv",
+    }
+
     colunas_hardware = list(dict.fromkeys(
         [
             *(
@@ -602,18 +652,6 @@ def main():
         ]
     ))
 
-    salvar_csv(
-        ARQUIVO_HISTORICO_HARDWARE,
-        historico_hardware,
-        colunas_hardware,
-    )
-
-    salvar_csv(
-        ARQUIVO_HISTORICO_PROCESSOS,
-        historico_processos,
-        colunas_processos,
-    )
-
     colunas_resumo = [
         "PC_INDUSTRIAL",
         "ID_PC_INDUSTRIAL",
@@ -632,12 +670,6 @@ def main():
         "DISCO_MAX_PCT",
     ]
 
-    salvar_csv(
-        ARQUIVO_RESUMO_HARDWARE,
-        resumos_hardware,
-        colunas_resumo,
-    )
-
     colunas_status = [
         "PC_INDUSTRIAL",
         "ID_PC_INDUSTRIAL",
@@ -649,12 +681,6 @@ def main():
         "DATA_ULTIMA_CAPTURA",
         "HORA_ULTIMA_CAPTURA",
     ]
-
-    salvar_csv(
-        ARQUIVO_STATUS_PCS,
-        status_pcs,
-        colunas_status,
-    )
 
     colunas_alertas = [
         "DATA",
@@ -671,12 +697,6 @@ def main():
         "TIPO_ALERTA",
     ]
 
-    salvar_csv(
-        ARQUIVO_ALERTAS,
-        alertas,
-        colunas_alertas,
-    )
-
     colunas_gerenciais = [
         "DATA_PROCESSAMENTO",
         "TOTAL_PCS_COM_CAPTURA",
@@ -688,23 +708,106 @@ def main():
     ]
 
     salvar_csv(
-        ARQUIVO_RESUMO_GERENCIAL,
+        os.path.join(PASTA_SAIDA, arquivos_saida["historico_hardware"]),
+        historico_hardware,
+        colunas_hardware,
+    )
+
+    salvar_csv(
+        os.path.join(PASTA_SAIDA, arquivos_saida["historico_processos"]),
+        historico_processos,
+        colunas_processos,
+    )
+
+    salvar_csv(
+        os.path.join(PASTA_SAIDA, arquivos_saida["resumo_hardware"]),
+        resumos_hardware,
+        colunas_resumo,
+    )
+
+    salvar_csv(
+        os.path.join(PASTA_SAIDA, arquivos_saida["status_pcs"]),
+        status_pcs,
+        colunas_status,
+    )
+
+    salvar_csv(
+        os.path.join(PASTA_SAIDA, arquivos_saida["alertas"]),
+        alertas,
+        colunas_alertas,
+    )
+
+    salvar_csv(
+        os.path.join(PASTA_SAIDA, arquivos_saida["resumo_gerencial"]),
         resumo_gerencial,
         colunas_gerenciais,
     )
 
-    print("-" * 60)
-    print("Tratamento concluido.")
-    print("Hardware tratado:", len(historico_hardware))
-    print("Processos tratados:", len(historico_processos))
-    print("Alertas identificados:", len(alertas))
-    print("Arquivos gerados:")
-    print("-", ARQUIVO_RESUMO_HARDWARE)
-    print("-", ARQUIVO_HISTORICO_HARDWARE)
-    print("-", ARQUIVO_HISTORICO_PROCESSOS)
-    print("-", ARQUIVO_STATUS_PCS)
-    print("-", ARQUIVO_ALERTAS)
-    print("-", ARQUIVO_RESUMO_GERENCIAL)
+    print("tratamento concluido")
+    print("hardware tratado:", len(historico_hardware))
+    print("processos tratados:", len(historico_processos))
+    print("alertas identificados:", len(alertas))
+    print("arquivos gerados:")
+
+    for arquivo in arquivos_saida.values():
+        print("-", arquivo)
+
+
+def main():
+    print("=" * 60)
+    print("MONITORE - TRATAMENTO DOS DADOS")
+    print("=" * 60)
+
+    arquivos_hardware = glob.glob(
+        os.path.join(
+            PASTA_ENTRADA,
+            "*_LIMPEZA_HARDWARE.csv",
+        )
+    )
+
+    arquivos_processos = glob.glob(
+        os.path.join(
+            PASTA_ENTRADA,
+            "*_LIMPEZA_PROCESSOS.csv",
+        )
+    )
+
+    mapa_processos = {
+        os.path.basename(arquivo).replace(
+            "_LIMPEZA_PROCESSOS.csv",
+            "",
+        ): arquivo
+        for arquivo in arquivos_processos
+    }
+
+    if not arquivos_hardware:
+        print("nenhum arquivo de hardware limpo encontrado")
+        return
+
+    for arquivo_hardware in sorted(arquivos_hardware):
+        nome = os.path.basename(arquivo_hardware)
+
+        identificador = nome.replace(
+            "_LIMPEZA_HARDWARE.csv",
+            "",
+        )
+
+        arquivo_processos = mapa_processos.get(identificador)
+
+        if arquivo_processos is None:
+            print(
+                "AVISO: arquivo de processos nao encontrado para:",
+                identificador,
+            )
+
+        processar_captura(
+            arquivo_hardware,
+            arquivo_processos,
+            identificador,
+        )
+
+    print("=" * 60)
+    print("processamento finalizado")
     print("=" * 60)
 
 
