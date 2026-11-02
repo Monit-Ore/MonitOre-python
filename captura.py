@@ -11,7 +11,7 @@ import psutil
 TOTAL_REGISTROS_LIMITE = 50
 INTERVALO_SEGUNDOS = 10
 
-# configurações de conexão com o mysql
+# conexão com o mysql
 CONFIG_BANCO = {
     "host": os.getenv("MYSQL_HOST"),
     "port": int(os.getenv("MYSQL_PORT", "3306")),
@@ -46,41 +46,42 @@ CABECALHO_PROCESSOS = [
 ]
 
 
-def normalizar_nome(nome):
-    """padroniza o nome do componente para facilitar a identificação"""
-
+def normalizar_nome(nome):    
+    # separa caracteres acentuados em duas partes, para remover o acento sem remover a letra
     nome = unicodedata.normalize("NFD", nome)
+    # retira o acento e junta as letras
     nome = "".join(
         caractere for caractere in nome
         if unicodedata.category(caractere) != "Mn"
     )
-
+    # strip() : remove espaços em branco
+    # upper() : transforma todas as letras em maiúsculas
     return nome.strip().upper()
 
 
 def identificar_componentes(componentes_banco):
-    """identifica quais métricas estão configuradas para o pc"""
+    # identifica quais métricas estão configuradas para o ipc
 
     componentes = set()
 
     for nome in componentes_banco:
         nome = normalizar_nome(nome)
 
-        if "CPU" in nome or "PROCESSADOR" in nome:
+        if "CPU" in nome:
             componentes.add("CPU")
 
-        elif "RAM" in nome or "MEMORIA" in nome:
+        elif "RAM" in nome:
             componentes.add("RAM")
 
-        elif "DISCO" in nome or "ARMAZENAMENTO" in nome:
+        elif "DISCO" in nome:
             componentes.add("DISCO")
 
     return componentes
 
 
 def consultar_configuracao_pc(hostname):
-    """consulta o pc e os componentes cadastrados no banco"""
 
+    # verificar se as configurações do bd estão preenchidas
     if not all([
         CONFIG_BANCO["host"],
         CONFIG_BANCO["user"],
@@ -91,9 +92,11 @@ def consultar_configuracao_pc(hostname):
             "nas variaveis de ambiente"
         )
 
+    # conectar o bd
     conexao = mysql.connector.connect(**CONFIG_BANCO)
 
     try:
+        # resultados das consultas serão retornado como dicionários
         cursor = conexao.cursor(dictionary=True)
 
         # identifica o pc industrial pelo hostname
@@ -107,7 +110,7 @@ def consultar_configuracao_pc(hostname):
             """,
             (hostname,),
         )
-
+        # armazena a consulta
         pc = cursor.fetchone()
 
         if pc is None:
@@ -116,7 +119,7 @@ def consultar_configuracao_pc(hostname):
                 "na tabela PC_Industrial"
             )
 
-        # consulta somente os componentes configurados para esse pc
+        # consulta somente os componentes configurados para o pc
         cursor.execute(
             """
             SELECT
@@ -146,6 +149,7 @@ def consultar_configuracao_pc(hostname):
 
         return pc, componentes, componentes_banco
 
+    # fecha a conexão com o bd  
     finally:
         conexao.close()
 
@@ -232,7 +236,7 @@ def obter_processos(
 
 
 def obter_uso_disco():
-    """calcula o percentual de ocupacao total dos discos locais"""
+    # calcula o percentual de ocupacao total dos discos locais
 
     total_bytes = 0
     usado_bytes = 0

@@ -7,11 +7,6 @@ from getpass import getpass
 
 import mysql.connector
 
-
-# ============================================================
-# CONFIGURACOES
-# ============================================================
-
 PASTA_ENTRADA = "."
 PASTA_SAIDA = "."
 
@@ -38,11 +33,6 @@ COMPONENTES = {
         "aliases": ["disco", "armazenamento", "hd", "ssd"],
     },
 }
-
-
-# ============================================================
-# LEITURA E GRAVACAO DOS CSVs
-# ============================================================
 
 def ler_csv(caminho):
     if not os.path.exists(caminho):
@@ -95,9 +85,7 @@ def salvar_csv(caminho, dados, colunas):
         escritor.writerows(dados)
 
 
-# ============================================================
-# CONVERSAO E NORMALIZACAO
-# ============================================================
+# CONVERSAO
 
 def numero(valor):
     if valor is None:
@@ -143,9 +131,7 @@ def identificar_componente(nome):
     return None
 
 
-# ============================================================
 # CONSULTA AO MYSQL
-# ============================================================
 
 def carregar_dados_banco():
     conexao = mysql.connector.connect(**CONFIG_BANCO)
@@ -195,11 +181,12 @@ def carregar_dados_banco():
         conexao.close()
 
 
-# ============================================================
+
 # IDENTIFICACAO DOS PCS E LIMITES
-# ============================================================
+
 
 def montar_mapa_pcs(registros_pcs):
+    # organiza os pc em um dicionário
     mapa = {}
 
     for pc in registros_pcs:
@@ -212,6 +199,7 @@ def montar_mapa_pcs(registros_pcs):
 
 
 def montar_mapa_limites(registros_limites):
+    # organiza os limites para cada ipc
     mapa = {}
 
     for registro in registros_limites:
@@ -237,6 +225,7 @@ def montar_mapa_limites(registros_limites):
 
 
 def componentes_configurados(limites, id_pc):
+    # quais conponentes estão configurados para cada computador
     return {
         componente
         for (pc_id, componente) in limites
@@ -254,9 +243,7 @@ def buscar_limite(limites, id_pc, componente):
     )
 
 
-# ============================================================
 # CLASSIFICACAO DE ALERTAS
-# ============================================================
 
 def classificar_alerta(valor, limite):
     if valor is None:
@@ -280,9 +267,8 @@ def classificar_alerta(valor, limite):
     return "Normal"
 
 
-# ============================================================
+
 # TRATAMENTO DO HARDWARE
-# ============================================================
 
 def tratar_hardware(dados, mapa_pcs, limites):
     historico = []
@@ -482,9 +468,7 @@ def tratar_hardware(dados, mapa_pcs, limites):
     return historico, resumos, alertas, status_pcs
 
 
-# ============================================================
 # TRATAMENTO DOS PROCESSOS
-# ============================================================
 
 def tratar_processos(dados, mapa_pcs):
     historico = []
@@ -519,9 +503,7 @@ def tratar_processos(dados, mapa_pcs):
     return historico
 
 
-# ============================================================
 # RESUMO GERENCIAL
-# ============================================================
 
 def gerar_resumo_gerencial(status_pcs, alertas):
     total_pcs = len(status_pcs)
@@ -564,9 +546,7 @@ def gerar_resumo_gerencial(status_pcs, alertas):
     }]
 
 
-# ============================================================
 # EXECUCAO PRINCIPAL
-# ============================================================
 
 def processar_captura(arquivo_hardware, arquivo_processos, identificador):
     print("-" * 60)
@@ -754,6 +734,7 @@ def processar_captura(arquivo_hardware, arquivo_processos, identificador):
 
 
 def main():
+    # procura e organiza as arquivos (mesma captura) 
     print("=" * 60)
     print("MONITORE - TRATAMENTO DOS DADOS")
     print("=" * 60)

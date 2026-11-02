@@ -24,11 +24,6 @@ def ler_csv(caminho):
             for coluna in colunas_originais
         ]
 
-        # compatibilidade com arquivos antigos
-        if "SERVIDOR" in colunas and "PC_INDUSTRIAL" not in colunas:
-            indice = colunas.index("SERVIDOR")
-            colunas[indice] = "PC_INDUSTRIAL"
-
         dados = []
 
         for linha in leitor:
@@ -84,6 +79,7 @@ def limpar_dados(dados, colunas):
 
         dados_limpos.append(registro)
 
+    # retorna uma lista contendo somente dados válidos
     return dados_limpos
 
 
@@ -138,6 +134,7 @@ def main():
     print("MONITORE - LIMPEZA DE DADOS")
     print("=" * 60)
 
+                    # procurar arquivos
     arquivos_hardware = glob.glob(
         os.path.join(PASTA_CAPTURA, "*_CAPTURA_HARDWARE.csv")
     )
